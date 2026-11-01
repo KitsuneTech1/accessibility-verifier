@@ -37,7 +37,8 @@ bundle `comtypes` or a snapshot command.
 
 ## Usage
 
-Run a check and write an HTML report plus a PNG beside it:
+Run a check and write an HTML report. A PNG is written beside it when the
+snapshot command succeeds:
 
 ```bash
 python accessibility_verifier.py "Window Title"

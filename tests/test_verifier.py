@@ -5,8 +5,11 @@ Tests reporting, analysis functions, and HTML generation.
 
 import json
 import hashlib
+import io
 import unittest
 from pathlib import Path
+from argparse import Namespace
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import MagicMock, patch
 
 import accessibility_verifier as av
@@ -138,6 +141,27 @@ class TestAccessibilityVerifier(unittest.TestCase):
             # Should return None or int, not raise
             self.assertTrue(result is None or isinstance(result, int))
 
+    def test_find_window_configures_pointer_sized_handle_signature(self):
+        class FakeFindWindow:
+            def __init__(self):
+                self.argtypes = None
+                self.restype = None
+
+            def __call__(self, class_name, window_name):
+                self.arguments = (class_name, window_name)
+                return 0x123456789
+
+        fake_find_window = FakeFindWindow()
+        fake_user32 = MagicMock(FindWindowW=fake_find_window)
+        fake_windll = MagicMock(user32=fake_user32)
+        with patch.object(av, "_HAS_CTYPES", True), patch.object(av, "windll", fake_windll):
+            result = av.find_window_by_name("Test Window")
+
+        self.assertEqual(result, 0x123456789)
+        self.assertEqual(fake_find_window.argtypes, [av.wintypes.LPCWSTR, av.wintypes.LPCWSTR])
+        self.assertIs(fake_find_window.restype, av.wintypes.HWND)
+        self.assertEqual(fake_find_window.arguments, (None, "Test Window"))
+
     def test_analyze_all_reports_have_warnings(self):
         """Test that all analyses include warnings (since full UI Automation isn't available)."""
         keyboard_report = av.analyze_keyboard_reachability("test")
@@ -257,7 +281,7 @@ class TestAccessibilityVerifier(unittest.TestCase):
         focus_visibility_report = {
             "focused_elements": [],
             "screenshot_captured": True,
-            "screenshot_path": "C:/private/window.png",
+            "screenshot_path": "window.png",
             "warnings": []
         }
 
@@ -276,6 +300,34 @@ class TestAccessibilityVerifier(unittest.TestCase):
         self.assertIn("&lt;unsafe warning&gt;", content)
         self.assertNotIn("<unsafe warning>", content)
         self.assertIn('src="window.png"', content)
+
+    def test_main_json_path_emits_combined_report_and_passes_snapshot_output(self):
+        args = Namespace(
+            window="Test Window",
+            output="report.html",
+            snapshot_output="capture.png",
+            snap="snap.exe",
+            json=True,
+        )
+        keyboard = {"kind": "keyboard"}
+        focus_order = {"kind": "order"}
+        visible_focus = {"kind": "visible"}
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with patch.object(av, "parse_args", return_value=args), patch.object(
+            av, "analyze_keyboard_reachability", return_value=keyboard
+        ), patch.object(av, "analyze_focus_order", return_value=focus_order), patch.object(
+            av, "analyze_visible_focus", return_value=visible_focus
+        ) as visible_mock, redirect_stdout(stdout), redirect_stderr(stderr):
+            av.main()
+
+        combined = json.loads(stdout.getvalue())
+        self.assertEqual(combined["window"], "Test Window")
+        self.assertEqual(combined["keyboard_reachability"], keyboard)
+        visible_mock.assert_called_once_with(
+            "Test Window", snap_cmd="snap.exe", snapshot_path="capture.png"
+        )
+        self.assertIn("Analyzing accessibility for: Test Window", stderr.getvalue())
 
 
 if __name__ == "__main__":
