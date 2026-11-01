@@ -335,6 +335,16 @@ def _display_element(element: Dict) -> str:
     return f"{name} ({control_type})"
 
 
+def _snapshot_link(snapshot_path: str, report_path: str) -> str:
+    """Return a browser-relative snapshot path for the generated report."""
+    try:
+        report_directory = Path(report_path).resolve().parent
+        snapshot = Path(snapshot_path).resolve()
+        return Path(os.path.relpath(snapshot, report_directory)).as_posix()
+    except (OSError, ValueError):
+        return Path(snapshot_path).name
+
+
 def _warning_blocks(warnings: Iterable[str]) -> str:
     return "".join(
         f'        <div class="warning">{html.escape(str(warning))}</div>\n'
@@ -370,8 +380,9 @@ def generate_html_report(
     screenshot = ""
     screenshot_path = focus_visibility_report.get("screenshot_path")
     if screenshot_path:
+        snapshot_link = _snapshot_link(screenshot_path, output_path)
         screenshot = (
-            f'        <p><img src="{html.escape(Path(screenshot_path).name)}" '
+            f'        <p><img src="{html.escape(snapshot_link)}" '
             "alt=\"Captured window for manual focus review\"></p>\n"
         )
     empty_keyboard = "            <li>None observed</li>\n"

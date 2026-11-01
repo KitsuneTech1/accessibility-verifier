@@ -112,6 +112,38 @@ class TestAccessibilityVerifier(unittest.TestCase):
         self.assertIn("Test warning 2", content)
         self.assertIn("Test warning 3", content)
 
+    def test_html_report_links_snapshot_relative_to_report(self):
+        output_dir = Path(__file__).with_name("_report_dir")
+        snapshot_dir = Path(__file__).with_name("_snapshot_dir")
+        output_dir.mkdir(exist_ok=True)
+        snapshot_dir.mkdir(exist_ok=True)
+        output_path = output_dir / "report.html"
+        snapshot_path = snapshot_dir / "window.png"
+
+        def cleanup():
+            output_path.unlink(missing_ok=True)
+            snapshot_path.unlink(missing_ok=True)
+            output_dir.rmdir()
+            snapshot_dir.rmdir()
+
+        self.addCleanup(cleanup)
+
+        av.generate_html_report(
+            "TestWindow",
+            {"keyboard_accessible_elements": [], "warnings": []},
+            {"focus_order_elements": [], "warnings": []},
+            {
+                "focused_elements": [],
+                "screenshot_captured": True,
+                "screenshot_path": str(snapshot_path),
+                "warnings": [],
+            },
+            str(output_path),
+        )
+
+        content = output_path.read_text(encoding="utf-8")
+        self.assertIn('src="../_snapshot_dir/window.png"', content)
+
     def test_cli_argument_parsing(self):
         """Test CLI argument parsing."""
         args = av.parse_args(["MyWindow", "--output", "custom_report.html", "--snap", "custom_snap.exe"])
@@ -299,7 +331,7 @@ class TestAccessibilityVerifier(unittest.TestCase):
         self.assertIn("&lt;Save&gt;", content)
         self.assertIn("&lt;unsafe warning&gt;", content)
         self.assertNotIn("<unsafe warning>", content)
-        self.assertIn('src="window.png"', content)
+        self.assertIn('src="../window.png"', content)
 
     def test_main_json_path_emits_combined_report_and_passes_snapshot_output(self):
         args = Namespace(
