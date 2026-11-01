@@ -26,7 +26,8 @@ class TestAccessibilityVerifier(unittest.TestCase):
 
     def test_analyze_keyboard_reachability_basic(self):
         """Test keyboard reachability analysis returns a report."""
-        report = av.analyze_keyboard_reachability("Test Window")
+        with patch.object(av, "find_window_by_name", return_value=None):
+            report = av.analyze_keyboard_reachability("Test Window")
 
         self.assertIn("window", report)
         self.assertEqual(report["window"], "Test Window")
@@ -35,7 +36,8 @@ class TestAccessibilityVerifier(unittest.TestCase):
 
     def test_analyze_focus_order_basic(self):
         """Test focus order analysis returns a report."""
-        report = av.analyze_focus_order("Test Window")
+        with patch.object(av, "find_window_by_name", return_value=None):
+            report = av.analyze_focus_order("Test Window")
 
         self.assertIn("window", report)
         self.assertIn("focus_order_elements", report)
@@ -45,18 +47,49 @@ class TestAccessibilityVerifier(unittest.TestCase):
 
     def test_analyze_visible_focus_basic(self):
         """Test visible focus analysis returns a report."""
-        report = av.analyze_visible_focus("Test Window")
+        with patch.object(av, "find_window_by_name", return_value=None), patch.object(
+            av, "capture_window_state", return_value=None
+        ):
+            report = av.analyze_visible_focus("Test Window")
 
         self.assertIn("window", report)
         self.assertIn("visible_focus_detected", report)
         self.assertIn("screenshot_captured", report)
         self.assertIsNone(report["visible_focus_detected"])
 
-    def test_capture_window_state_missing_window(self):
-        """Test capture handles missing window gracefully."""
-        result = av.capture_window_state("NonexistentWindow12345")
-        # Should return None or empty bytes on failure
-        self.assertTrue(result is None or len(result) == 0)
+    def test_capture_handles_snapshot_command_failure(self):
+        """Test capture handles a failed snapshot command gracefully."""
+        completed = av.subprocess.CompletedProcess(
+            args=["snap.exe"], returncode=1, stdout=b"", stderr=b""
+        )
+        with patch.object(av.subprocess, "run", return_value=completed) as run:
+            result = av.capture_window_state("NonexistentWindow12345")
+
+        self.assertIsNone(result)
+        run.assert_called_once()
+
+    def test_capture_returns_none_when_command_writes_no_snapshot(self):
+        completed = av.subprocess.CompletedProcess(
+            args=["snap.exe"], returncode=0, stdout=b"", stderr=b""
+        )
+        with patch.object(av.subprocess, "run", return_value=completed) as run:
+            result = av.capture_window_state("Test Window")
+
+        self.assertIsNone(result)
+        self.assertFalse(run.call_args.kwargs["text"])
+
+    def test_capture_reads_and_cleans_nonempty_snapshot(self):
+        def write_snapshot(command, **kwargs):
+            Path(command[-1]).write_bytes(b"png-bytes")
+            return av.subprocess.CompletedProcess(
+                args=command, returncode=0, stdout=b"", stderr=b""
+            )
+
+        with patch.object(av.subprocess, "run", side_effect=write_snapshot) as run:
+            result = av.capture_window_state("Test Window")
+
+        self.assertEqual(result, b"png-bytes")
+        self.assertFalse(run.call_args.kwargs["text"])
 
     def test_generate_html_report_creates_file(self):
         """Test HTML report generation creates a file."""
@@ -165,13 +198,9 @@ class TestAccessibilityVerifier(unittest.TestCase):
 
         self.assertEqual(args.snapshot_output, "capture.png")
 
-    def test_find_window_by_name_ctypes(self):
-        """Test window finding requires ctypes."""
-        if av._HAS_CTYPES:
-            # This may return None if window doesn't exist, which is fine
-            result = av.find_window_by_name("Nonexistent Window 12345 XYZ")
-            # Should return None or int, not raise
-            self.assertTrue(result is None or isinstance(result, int))
+    def test_find_window_by_name_returns_none_without_ctypes(self):
+        with patch.object(av, "_HAS_CTYPES", False):
+            self.assertIsNone(av.find_window_by_name("Test Window"))
 
     def test_find_window_configures_pointer_sized_handle_signature(self):
         class FakeFindWindow:
@@ -196,9 +225,12 @@ class TestAccessibilityVerifier(unittest.TestCase):
 
     def test_analyze_all_reports_have_warnings(self):
         """Test that all analyses include warnings (since full UI Automation isn't available)."""
-        keyboard_report = av.analyze_keyboard_reachability("test")
-        focus_order_report = av.analyze_focus_order("test")
-        focus_visibility_report = av.analyze_visible_focus("test")
+        with patch.object(av, "find_window_by_name", return_value=None), patch.object(
+            av, "capture_window_state", return_value=None
+        ):
+            keyboard_report = av.analyze_keyboard_reachability("test")
+            focus_order_report = av.analyze_focus_order("test")
+            focus_visibility_report = av.analyze_visible_focus("test")
 
         self.assertTrue(len(keyboard_report.get("warnings", [])) > 0)
         self.assertTrue(len(focus_order_report.get("warnings", [])) > 0)
@@ -360,6 +392,26 @@ class TestAccessibilityVerifier(unittest.TestCase):
             "Test Window", snap_cmd="snap.exe", snapshot_path="capture.png"
         )
         self.assertIn("Analyzing accessibility for: Test Window", stderr.getvalue())
+
+    def test_main_rejects_snapshot_path_that_would_overwrite_html_report(self):
+        args = Namespace(
+            window="Test Window",
+            output="reports/../report.html",
+            snapshot_output="report.html",
+            snap="snap.exe",
+            json=False,
+        )
+        with patch.object(av, "parse_args", return_value=args), patch.object(
+            av, "analyze_keyboard_reachability"
+        ) as keyboard_mock, patch.object(av, "analyze_focus_order") as focus_mock, patch.object(
+            av, "analyze_visible_focus"
+        ) as visible_mock:
+            with self.assertRaisesRegex(SystemExit, "must be different"):
+                av.main()
+
+        keyboard_mock.assert_not_called()
+        focus_mock.assert_not_called()
+        visible_mock.assert_not_called()
 
 
 if __name__ == "__main__":
