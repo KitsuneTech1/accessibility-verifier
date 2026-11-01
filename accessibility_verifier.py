@@ -78,11 +78,15 @@ def capture_window_state(window_name: str, snap_cmd: str = "snap.exe") -> Option
         result = subprocess.run(
             [snap_cmd, "--window", window_name, "--output", tmp_path],
             capture_output=True,
-            text=True,
+            text=False,
             timeout=10,
             check=False,
         )
-        if result.returncode != 0 or not os.path.exists(tmp_path):
+        if (
+            result.returncode != 0
+            or not os.path.isfile(tmp_path)
+            or os.path.getsize(tmp_path) == 0
+        ):
             return None
 
         with open(tmp_path, "rb") as snapshot:
@@ -345,6 +349,16 @@ def _snapshot_link(snapshot_path: str, report_path: str) -> str:
         return Path(snapshot_path).name
 
 
+def _same_path(first_path: str, second_path: str) -> bool:
+    """Return whether two output paths resolve to the same location."""
+    try:
+        first = os.path.normcase(os.path.realpath(os.path.abspath(os.fspath(first_path))))
+        second = os.path.normcase(os.path.realpath(os.path.abspath(os.fspath(second_path))))
+        return first == second
+    except (OSError, TypeError, ValueError):
+        return False
+
+
 def _warning_blocks(warnings: Iterable[str]) -> str:
     return "".join(
         f'        <div class="warning">{html.escape(str(warning))}</div>\n'
@@ -476,8 +490,11 @@ def parse_args(args=None):
 def main():
     """CLI entrypoint."""
     args = parse_args()
-    print(f"Analyzing accessibility for: {args.window}", file=sys.stderr)
     snapshot_path = args.snapshot_output or str(Path(args.output).with_suffix(".png"))
+    if not args.json and _same_path(args.output, snapshot_path):
+        raise SystemExit("--output and --snapshot-output must be different paths")
+
+    print(f"Analyzing accessibility for: {args.window}", file=sys.stderr)
 
     keyboard_report = analyze_keyboard_reachability(args.window)
     focus_order_report = analyze_focus_order(args.window)
