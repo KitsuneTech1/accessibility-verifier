@@ -21,6 +21,8 @@ from typing import Dict, Iterable, List, Optional, Tuple
 __version__ = "0.1.0"
 
 
+from ctypes import wintypes
+
 try:
     from ctypes import windll
 
@@ -53,7 +55,10 @@ def find_window_by_name(window_name: str) -> Optional[int]:
         return None
 
     try:
-        hwnd = windll.user32.FindWindowW(None, window_name)
+        find_window = windll.user32.FindWindowW
+        find_window.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        find_window.restype = wintypes.HWND
+        hwnd = find_window(None, window_name)
         return hwnd or None
     except Exception:
         return None
