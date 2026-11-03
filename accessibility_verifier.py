@@ -29,6 +29,7 @@ try:
     _HAS_CTYPES = True
 except ImportError:
     _HAS_CTYPES = False
+    windll = None
 
 
 _CONTROL_TYPE_NAMES = {
