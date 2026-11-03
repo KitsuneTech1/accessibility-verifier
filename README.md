@@ -4,6 +4,7 @@
 
 Read-only Windows accessibility checker. Inspects keyboard focus, UI Automation tree order, and focus visibility without activating windows or sending input.
 
+[![Build Status](https://github.com/KitsuneTech1/accessibility-verifier/actions/workflows/ci.yml/badge.svg)](https://github.com/KitsuneTech1/accessibility-verifier/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) ![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)
 
 ## Quick Start
@@ -45,6 +46,17 @@ The focus order result is the observed UI Automation tree order. It is not a sim
 - An external read-only snapshot command that accepts the arguments `--window WINDOW --output PATH`. The default command name is `snap.exe`, but use `--snap` to provide another command.
 
 The repository has no required third-party Python dependencies. It does not bundle `comtypes` or a snapshot command.
+
+
+## Architecture & Data Flow
+
+```mermaid
+flowchart LR
+    A[Target Process / HWND] --> B[UI Automation Tree Inspector]
+    B --> C[Focus Traversal Order Verification]
+    C --> D[Accessible Names & Keyboard Focus Rules]
+    D --> E[Accessibility Compliance Report]
+```
 
 ## Usage
 
